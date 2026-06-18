@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import '../Design/FabricStickerForm.css';
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5001/api' : 'https://fabric-backend-3.onrender.com/api');
+
 const FabricStickerForm = () => {
   const navigate = useNavigate();
 
@@ -139,7 +141,7 @@ const FabricStickerForm = () => {
       try {
         const ctrl = new AbortController();
         const tid = setTimeout(() => ctrl.abort(), 3000);
-        await fetch('https://fabric-backend-3.onrender.com//api/stats', { signal: ctrl.signal });
+        await fetch(`${API_BASE_URL}/stats`, { signal: ctrl.signal });
         clearTimeout(tid);
         if (!isMounted.current) return;
 
@@ -357,7 +359,7 @@ const FabricStickerForm = () => {
 
     try {
       setIsLoadingSequence(true);
-      const response = await fetch('https://fabric-backend-3.onrender.com//api/google-sheets/next-barcode-id', {
+      const response = await fetch(`${API_BASE_URL}/google-sheets/next-barcode-id`, {
         signal: controller.signal
       });
       clearTimeout(timeoutId);
@@ -405,7 +407,7 @@ const FabricStickerForm = () => {
     const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     try {
-      const response = await fetch('https://fabric-backend-3.onrender.com//api/google-sheets/next-barcode-id', {
+      const response = await fetch(`${API_BASE_URL}/google-sheets/next-barcode-id`, {
         signal: controller.signal
       });
       clearTimeout(timeoutId);
@@ -490,7 +492,7 @@ const FabricStickerForm = () => {
     const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     try {
-      await fetch('https://fabric-backend-3.onrender.com//api/batch/complete', {
+      await fetch(`${API_BASE_URL}/batch/complete`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -523,7 +525,7 @@ const FabricStickerForm = () => {
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
     try {
-      const API_URL = 'https://fabric-backend-3.onrender.com//api/google-sheets/store-fabric-data';
+      const API_URL = `${API_BASE_URL}/google-sheets/store-fabric-data`;
 
       const payload = {
         barcodeId: data.uniqueBarcodeId,
@@ -629,7 +631,7 @@ const FabricStickerForm = () => {
     const stopTimeoutId = setTimeout(() => stopController.abort(), 5000);
 
     try {
-      await fetch('https://fabric-backend-3.onrender.com//api/batch/complete', {
+      await fetch(`${API_BASE_URL}/batch/complete`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -1621,8 +1623,8 @@ const FabricStickerForm = () => {
           {/* <p>Add material details</p> */}
         </div>
         <div className="page-actions">
-          <button 
-            className="btn-page-switch" 
+          <button
+            className="btn-page-switch"
             onClick={() => navigate('/dyeing-material')}
           >
             <ArrowLeftRight size={14} /> Switch to Dyeing Material

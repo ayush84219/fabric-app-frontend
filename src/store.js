@@ -1,4 +1,4 @@
-const BASE_URL = 'https://fabric-backend-3.onrender.com//api';
+const BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5001/api' : 'https://fabric-backend-3.onrender.com/api');
 
 const getHeaders = () => {
   const token = localStorage.getItem('twms_token');
@@ -241,7 +241,7 @@ export const store = {
       headers: getHeaders(),
     }).then(handleResponse).then(data => data.auditLog || []);
   },
-  
+
   getDyeingDiscrepancyReport: async () => {
     return fetch(`${BASE_URL}/reports/dyeing-discrepancy`, {
       headers: getHeaders(),

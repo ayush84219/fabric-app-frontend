@@ -40,7 +40,7 @@ const FabricIssued = () => {
   const historyEndRef = useRef(null);
 
 
-  const API_BASE_URL = 'https://fabric-backend-3.onrender.com//api';
+  const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5001/api' : 'https://fabric-backend-3.onrender.com/api');
 
   // Load logged in user data
   useEffect(() => {
