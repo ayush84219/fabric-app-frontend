@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { store } from '../store.js';
-import { PackagePlus, Save, QrCode, Printer, X, CheckCircle, MapPin, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { PackagePlus, Save, QrCode, Printer, X, CheckCircle, MapPin, AlertTriangle, ArrowLeft, Camera, Loader2 } from 'lucide-react';
 import JsBarcode from 'jsbarcode';
 
 
@@ -90,6 +90,8 @@ export default function GRNPage() {
   const [rooms, setRooms] = useState([]);
   const [showRecommendations, setShowRecommendations] = useState(false);
   const [error, setError] = useState('');
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanSuccess, setScanSuccess] = useState('');
 
   const findBestLocation = (categoryVal, rollsCount = 0, currentShelves = shelves, currentRooms = rooms) => {
     const room = (currentRooms || []).find(r => r.category === categoryVal) || (currentRooms || [])[0];
@@ -165,6 +167,48 @@ export default function GRNPage() {
 
   const getSupplierName = (id) => suppliers.find(s => s.id == id)?.name || '—';
   const getMaterialName = (id) => materials.find(m => m.id == id)?.name || '—';
+
+  const handleScanBill = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsScanning(true);
+    setError('');
+    setScanSuccess('');
+
+    try {
+      const res = await store.parseBillOcr(file);
+      if (res.success && res.data) {
+        const { supplier, poNumber, materialName, category, weight, rolls, invoiceNo } = res.data;
+        
+        // Find best location for this category and rolls count
+        const bestLoc = findBestLocation(category || 'Summer Fabric', parseInt(rolls) || 0);
+
+        setForm(f => ({
+          ...f,
+          supplier: supplier || '',
+          poNumber: poNumber || '',
+          materialName: materialName || '',
+          category: category || 'Summer Fabric',
+          weight: weight !== undefined && weight !== null ? String(weight) : '',
+          rolls: rolls !== undefined && rolls !== null ? String(rolls) : '',
+          invoiceNo: invoiceNo || '',
+          location: bestLoc
+        }));
+
+        setScanSuccess('GRN Bill scanned and parsed successfully! Fields populated.');
+        setTimeout(() => setScanSuccess(''), 5000);
+      } else {
+        throw new Error(res.error || 'Failed to parse invoice');
+      }
+    } catch (err) {
+      console.error(err);
+      setError(`OCR Scan Error: ${err.message}`);
+    } finally {
+      setIsScanning(false);
+      e.target.value = ''; // Reset file input
+    }
+  };
 
   const handleSubmit = async () => {
     setError('');
@@ -403,6 +447,42 @@ export default function GRNPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <style>{`
+        .spin {
+          animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        .card-loader-overlay {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(255, 255, 255, 0.85);
+          backdrop-filter: blur(2px);
+          z-index: 10;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 12px;
+          border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+          transition: all 0.3s ease;
+        }
+        .dark .card-loader-overlay {
+          background: rgba(30, 41, 59, 0.85);
+        }
+        .animate-fade-in {
+          animation: fadeIn 0.25s ease-out forwards;
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(-4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
       <div className="page-header">
         <div className="page-title-block" style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
           <button 
@@ -425,14 +505,66 @@ export default function GRNPage() {
         {/* GRN Form */}
         <div>
           <div className="card">
-            <div className="card-header">
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div className="card-title"><PackagePlus size={15} /> New GRN Entry</div>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <input
+                  type="file"
+                  id="grn-ocr-upload"
+                  accept="image/*"
+                  onChange={handleScanBill}
+                  style={{ display: 'none' }}
+                  disabled={isScanning}
+                />
+                <label
+                  htmlFor="grn-ocr-upload"
+                  className={`btn btn-secondary btn-sm ${isScanning ? 'disabled' : ''}`}
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: 6, 
+                    margin: 0, 
+                    cursor: isScanning ? 'not-allowed' : 'pointer',
+                    background: 'var(--primary-light)',
+                    color: 'var(--primary)',
+                    border: '1px solid rgba(26, 86, 219, 0.2)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '5px 10px',
+                    fontWeight: 600,
+                  }}
+                >
+                  {isScanning ? (
+                    <>
+                      <Loader2 size={13} className="spin" />
+                      <span>Scanning...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Camera size={13} />
+                      <span>Scan Bill</span>
+                    </>
+                  )}
+                </label>
+              </div>
             </div>
-            <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, position: 'relative' }}>
+              {isScanning && (
+                <div className="card-loader-overlay">
+                  <Loader2 size={30} className="spin" style={{ color: 'var(--primary)' }} />
+                  <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: 13 }}>Parsing Invoice...</div>
+                  <div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Extracting bill fields via OCR</div>
+                </div>
+              )}
               {error && (
                 <div className="alert alert-danger" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
                   <AlertTriangle size={15} />
                   <span>{error}</span>
+                </div>
+              )}
+              {scanSuccess && (
+                <div className="alert alert-success animate-fade-in" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                  <CheckCircle size={15} />
+                  <span>{scanSuccess}</span>
                 </div>
               )}
               <div className="form-group">

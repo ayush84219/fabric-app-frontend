@@ -5,7 +5,7 @@ import {
   Package, Warehouse, PackagePlus, PackageMinus,
   ArrowLeftRight, BarChart3, Settings, ChevronDown,
   Search, Bell, Sun, Moon, Menu, LogOut, ChevronRight,
-  Printer, Sparkles, Droplets
+  Printer, Sparkles, Droplets, ArrowLeft
 } from 'lucide-react';
 
 const NAV = [
@@ -208,6 +208,12 @@ export default function Layout({ children, darkMode, toggleDark, currentUser, ha
           <button className="topbar-toggle" onClick={() => setCollapsed(c => !c)} id="sidebar-toggle-btn">
             <Menu size={18} />
           </button>
+
+          {location.pathname !== '/materials' && (
+            <button className="topbar-toggle" onClick={() => navigate(-1)} id="global-back-btn" title="Go Back" style={{ marginLeft: 8 }}>
+              <ArrowLeft size={18} />
+            </button>
+          )}
 
           <div className="topbar-search">
             <Search size={15} className="search-icon" />

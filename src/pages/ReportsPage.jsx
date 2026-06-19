@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { store } from '../store.js';
-import { BarChart3, Download, FileText, TrendingUp, Package, Warehouse, Users } from 'lucide-react';
+import { BarChart3, Download, FileText, TrendingUp, Package, Warehouse, Users, Search } from 'lucide-react';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
@@ -29,13 +29,44 @@ export default function ReportsPage() {
   const [suppliers, setSuppliers] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [dyeingReport, setDyeingReport] = useState([]);
+  const [dyeingMaterials, setDyeingMaterials] = useState([]);
   const [selectedReceipt, setSelectedReceipt] = useState(null);
+  const [lotRolls, setLotRolls] = useState([]);
+  const [isLoadingLotRolls, setIsLoadingLotRolls] = useState(false);
+  const [dyeingSearchQuery, setDyeingSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+
+  const formatDate = (dateStr) => {
+    if (!dateStr || dateStr === '—') return '';
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('en-GB');
+  };
+
+  const handleOpenReceipt = async (receipt) => {
+    setSelectedReceipt(receipt);
+    setLotRolls([]);
+    setIsLoadingLotRolls(true);
+    try {
+      const rolls = await store.getDyeingMaterials();
+      const filtered = rolls.filter(r =>
+        (r.lotNumber && String(r.lotNumber).toLowerCase() === String(receipt.lotNumber).toLowerCase()) ||
+        (r.billNumber && String(r.billNumber).toLowerCase() === String(receipt.billNumber).toLowerCase())
+      );
+      // Sort by roll number ascending
+      filtered.sort((a, b) => (a.rollNumber || 0) - (b.rollNumber || 0));
+      setLotRolls(filtered);
+    } catch (e) {
+      console.error('Failed to fetch lot rolls:', e);
+    } finally {
+      setIsLoadingLotRolls(false);
+    }
+  };
 
   useEffect(() => {
     let active = true;
     const loadData = async () => {
       try {
-        const [mats, shvs, grnList, iss, trfs, sups, rms, dyeingData] = await Promise.all([
+        const [mats, shvs, grnList, iss, trfs, sups, rms, dyeingData, dyeingMats] = await Promise.all([
           store.getMaterials(),
           store.getShelves(),
           store.getGRNs(),
@@ -43,7 +74,8 @@ export default function ReportsPage() {
           store.getTransfers(),
           store.getSuppliers(),
           store.getRooms(),
-          store.getDyeingDiscrepancyReport()
+          store.getDyeingDiscrepancyReport(),
+          store.getDyeingMaterials()
         ]);
         if (!active) return;
         setMaterials(mats || []);
@@ -54,6 +86,7 @@ export default function ReportsPage() {
         setSuppliers(sups || []);
         setRooms(rms || []);
         setDyeingReport(dyeingData || []);
+        setDyeingMaterials(dyeingMats || []);
       } catch (e) {
         console.error(e);
       }
@@ -65,15 +98,45 @@ export default function ReportsPage() {
   const getSupplierName = (id) => suppliers.find(s => s.id === id)?.name || '—';
 
   // Stock Report Data
-  const stockData = materials.map(m => ({
-    name: m.name, code: m.code, category: m.category, color: m.color,
-    stock: m.rolls,
-    location: m.location, status: m.status,
-  }));
+  const stockData = [
+    ...materials.map(m => ({
+      name: m.name, code: m.code, category: m.category, color: m.color || '—',
+      stock: m.rolls,
+      location: m.location || '—', status: m.status,
+    })),
+    ...dyeingMaterials.map(dm => ({
+      name: dm.fabricName || dm.cmfName || 'Dyeing Fabric',
+      code: dm.barcodeId,
+      category: 'Dyeing Fabric',
+      color: dm.shade || '—',
+      stock: dm.status === 'issued' ? 0 : 1,
+      location: dm.location || '—',
+      status: dm.status === 'issued' ? 'Issued' : 'Active',
+    }))
+  ];
+
+  const allStockItems = [
+    ...materials.map(m => ({ category: m.category, rolls: m.rolls })),
+    ...dyeingMaterials.map(dm => ({ category: 'Dyeing Fabric', rolls: dm.status === 'issued' ? 0 : 1 }))
+  ];
 
   const categoryStock = Object.entries(
-    materials.reduce((acc, m) => { acc[m.category] = (acc[m.category] || 0) + m.rolls; return acc; }, {})
+    allStockItems.reduce((acc, item) => { acc[item.category] = (acc[item.category] || 0) + item.rolls; return acc; }, {})
   ).map(([cat, val]) => ({ name: cat, value: val }));
+
+  const filteredDyeingReport = dyeingReport.filter(d => {
+    const query = dyeingSearchQuery.toLowerCase().trim();
+    if (!query) return true;
+    return (
+      (d.billNumber && d.billNumber.toLowerCase().includes(query)) ||
+      (d.lotNumber && d.lotNumber.toLowerCase().includes(query)) ||
+      (d.barcodeIds && d.barcodeIds.toLowerCase().includes(query)) ||
+      (d.fabric && d.fabric.toLowerCase().includes(query)) ||
+      (d.brand && d.brand.toLowerCase().includes(query)) ||
+      (d.sentShade && d.sentShade.toLowerCase().includes(query)) ||
+      (d.receivedShade && d.receivedShade.toLowerCase().includes(query))
+    );
+  });
 
   // Warehouse Report
   const roomData = rooms.map(room => {
@@ -501,9 +564,69 @@ export default function ReportsPage() {
 
           {/* Details Table */}
           <div className="card">
-            <div className="card-header">
-              <div className="card-title">Dyeing Lot Discrepancy & Verification</div>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>10% weight variance threshold</span>
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+              <div>
+                <div className="card-title">Dyeing Lot Discrepancy & Verification</div>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>10% weight variance threshold</span>
+              </div>
+              <div style={{ position: 'relative', width: '320px', transition: 'all 0.2s ease' }}>
+                <input
+                  type="text"
+                  placeholder="Search lot, barcode, bill, fabric..."
+                  value={dyeingSearchQuery}
+                  onChange={e => setDyeingSearchQuery(e.target.value)}
+                  onFocus={() => setIsSearchFocused(true)}
+                  onBlur={() => setIsSearchFocused(false)}
+                  style={{
+                    width: '100%',
+                    padding: '9px 36px 9px 36px',
+                    fontSize: '13px',
+                    border: isSearchFocused ? '1px solid var(--primary)' : '1px solid var(--border)',
+                    borderRadius: '8px',
+                    backgroundColor: 'var(--bg)',
+                    color: 'var(--text-primary)',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                    boxShadow: isSearchFocused ? '0 0 0 3px rgba(26, 86, 219, 0.15)' : 'none',
+                    transition: 'all 0.2s ease-in-out'
+                  }}
+                />
+                <Search 
+                  size={14} 
+                  style={{ 
+                    position: 'absolute', 
+                    left: 12, 
+                    top: '50%', 
+                    transform: 'translateY(-50%)', 
+                    color: isSearchFocused ? 'var(--primary)' : 'var(--text-muted)',
+                    transition: 'color 0.2s ease'
+                  }} 
+                />
+                {dyeingSearchQuery && (
+                  <button
+                    onClick={() => setDyeingSearchQuery('')}
+                    style={{
+                      position: 'absolute',
+                      right: 12,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      fontSize: '16px',
+                      cursor: 'pointer',
+                      color: 'var(--text-muted)',
+                      padding: '4px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: '50%'
+                    }}
+                    title="Clear search"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
             </div>
             <div className="table-wrap" style={{ border: 'none' }}>
               <table>
@@ -512,6 +635,7 @@ export default function ReportsPage() {
                     <th>#</th>
                     <th>Bill Number</th>
                     <th>Lot Number</th>
+                    <th>Barcode ID</th>
                     <th>Fabric / Brand</th>
                     <th>Sent Rolls</th>
                     <th>Sent Wt.</th>
@@ -525,11 +649,22 @@ export default function ReportsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {dyeingReport.map((d, i) => (
+                  {filteredDyeingReport.map((d, i) => (
                     <tr key={i}>
                       <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{i + 1}</td>
                       <td style={{ fontWeight: 700, color: 'var(--primary)', fontSize: 12 }}>{d.billNumber}</td>
                       <td style={{ fontWeight: 600, fontSize: 12 }}>{d.lotNumber}</td>
+                      <td style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                        {d.barcodeIds ? (
+                          d.barcodeIds.split(',').length > 1 ? (
+                            <span title={d.barcodeIds.split(',').join('\n')} style={{ cursor: 'help', borderBottom: '1px dotted var(--text-muted)' }}>
+                              {d.barcodeIds.split(',')[0]} (+{d.barcodeIds.split(',').length - 1} more)
+                            </span>
+                          ) : (
+                            d.barcodeIds
+                          )
+                        ) : ''}
+                      </td>
                       <td style={{ fontSize: 12 }}>
                         <div style={{ fontWeight: 600 }}>{d.fabric}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{d.brand}</div>
@@ -562,17 +697,17 @@ export default function ReportsPage() {
                             gap: '4px',
                             cursor: 'pointer'
                           }}
-                          onClick={() => setSelectedReceipt(d)}
+                          onClick={() => handleOpenReceipt(d)}
                         >
                           🖨️ JW Receipt
                         </button>
                       </td>
                     </tr>
                   ))}
-                  {dyeingReport.length === 0 && (
+                  {filteredDyeingReport.length === 0 && (
                     <tr>
                       <td colSpan="13" style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>
-                        No dyeing material received records found to compare.
+                        {dyeingReport.length === 0 ? "No dyeing material received records found to compare." : "No matching dyeing lots found."}
                       </td>
                     </tr>
                   )}
@@ -598,6 +733,16 @@ export default function ReportsPage() {
           fontWeight: 'bold',
           backgroundColor: '#f3f4f6'
         };
+
+        const hasRollMismatch = selectedReceipt.receivedRolls < selectedReceipt.sentRolls;
+        const hasWeightShortage = selectedReceipt.weightDiff > 0;
+        const showShortageSection = (hasRollMismatch || hasWeightShortage) && selectedReceipt.sentRolls > 0 && selectedReceipt.receivedRolls > 0;
+
+        const expectedWeight = hasRollMismatch
+          ? ((selectedReceipt.sentWeight / selectedReceipt.sentRolls) * selectedReceipt.receivedRolls)
+          : selectedReceipt.sentWeight;
+        const actualShortage = expectedWeight - selectedReceipt.receivedWeight;
+        const actualShortagePct = expectedWeight > 0 ? (actualShortage / expectedWeight) * 100 : 0;
 
         return (
           <div className="modal-overlay" style={{
@@ -684,6 +829,12 @@ export default function ReportsPage() {
                   color: black !important;
                   page-break-inside: avoid !important;
                 }
+
+                #jw-receipt-print-area * {
+                  color: #000 !important;
+                  border-color: #000 !important;
+                  background-color: transparent !important;
+                }
               }
             `}</style>
 
@@ -734,25 +885,29 @@ export default function ReportsPage() {
                   <tbody>
                     <tr>
                       <td style={tdStyle}><b>Job Processor</b></td>
-                      <td style={tdStyle}>{selectedReceipt.brand || '—'}</td>
+                      <td style={tdStyle}>{selectedReceipt.brand && selectedReceipt.brand !== '—' ? selectedReceipt.brand : ''}</td>
                       <td style={tdStyle}><b>Lot No.</b></td>
-                      <td style={tdStyle}>{selectedReceipt.lotNumber || '—'}</td>
+                      <td style={tdStyle}>{selectedReceipt.lotNumber && selectedReceipt.lotNumber !== '—' ? selectedReceipt.lotNumber : ''}</td>
                     </tr>
                     <tr>
                       <td style={tdStyle}><b>Process</b></td>
                       <td style={tdStyle}>ONLY RFD (HEAT SET ALREADY DONE)</td>
                       <td style={tdStyle}><b>Date of Receipt</b></td>
-                      <td style={tdStyle}>{selectedReceipt.latestReceivedAt ? new Date(selectedReceipt.latestReceivedAt).toLocaleDateString('en-GB') : '—'}</td>
+                      <td style={tdStyle}>{selectedReceipt.latestReceivedAt ? formatDate(selectedReceipt.latestReceivedAt) : ''}</td>
                     </tr>
                     <tr>
                       <td style={tdStyle}><b>Date of Issue</b></td>
-                      <td style={tdStyle}>{selectedReceipt.date ? new Date(selectedReceipt.date).toLocaleDateString('en-GB') : '—'}</td>
+                      <td style={tdStyle}>{selectedReceipt.date ? formatDate(selectedReceipt.date) : ''}</td>
                       <td style={tdStyle}><b>Standard Depth</b></td>
-                      <td style={tdStyle}>—</td>
+                      <td style={tdStyle}></td>
                     </tr>
                     <tr>
                       <td colSpan="2" style={tdStyle}><b>DIA (Fabric+Rib) approved By Master</b></td>
                       <td colSpan="2" style={tdStyle}>[ ] Yes   [ ] No</td>
+                    </tr>
+                    <tr>
+                      <td style={tdStyle}><b>Storage Location</b></td>
+                      <td style={tdStyle} colSpan="3">{selectedReceipt.location && selectedReceipt.location !== '—' ? selectedReceipt.location : ''}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -777,23 +932,23 @@ export default function ReportsPage() {
                   </thead>
                   <tbody>
                     <tr>
-                      <td style={tdStyle}>{selectedReceipt.sentShade || '—'}</td>
-                      <td style={tdStyle}>{selectedReceipt.receivedShade || '—'}</td>
-                      <td style={tdStyle}>—</td>
-                      <td style={tdStyle}>—</td>
-                      <td style={tdStyle}>—</td>
-                      <td style={tdStyle}>—</td>
-                      <td style={tdStyle}>—</td>
-                      <td style={tdStyle}>—</td>
+                      <td style={tdStyle}>{selectedReceipt.sentShade && selectedReceipt.sentShade !== '—' ? selectedReceipt.sentShade : ''}</td>
+                      <td style={tdStyle}>{selectedReceipt.receivedShade && selectedReceipt.receivedShade !== '—' ? selectedReceipt.receivedShade : ''}</td>
+                      <td style={tdStyle}></td>
+                      <td style={tdStyle}></td>
+                      <td style={tdStyle}></td>
+                      <td style={tdStyle}></td>
+                      <td style={tdStyle}></td>
+                      <td style={tdStyle}></td>
                     </tr>
                   </tbody>
                 </table>
 
                 <div style={{ border: '1px solid #000', padding: '6px', fontWeight: 'bold', marginBottom: '12px', fontSize: '12px' }}>
-                  Fabric : {selectedReceipt.fabric || '—'}
+                  Fabric : {selectedReceipt.fabric && selectedReceipt.fabric !== '—' ? selectedReceipt.fabric : ''}
                 </div>
 
-                {selectedReceipt.receivedRolls < selectedReceipt.sentRolls && selectedReceipt.sentRolls > 0 && selectedReceipt.receivedRolls > 0 && (
+                {showShortageSection && (
                   <div style={{
                     border: '1px solid #dc2626',
                     padding: '8px 12px',
@@ -804,13 +959,15 @@ export default function ReportsPage() {
                     boxSizing: 'border-box'
                   }}>
                     <div style={{ fontWeight: 'bold', borderBottom: '1px solid #fca5a5', paddingBottom: '4px', marginBottom: '6px' }}>
-                      Shortage Calculation for Received Roll(s) Only:
+                      {hasRollMismatch
+                        ? "Shortage Calculation for Received Roll(s) Only:"
+                        : "Shortage Calculation:"}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px' }}>
-                      <div>Total Sent: <b>{selectedReceipt.sentRolls} Rolls / {selectedReceipt.sentWeight.toFixed(2)} KG</b> (Avg: {(selectedReceipt.sentWeight / selectedReceipt.sentRolls).toFixed(2)} KG/Roll)</div>
+                      <div>Total Sent: <b>{selectedReceipt.sentRolls} Rolls / {selectedReceipt.sentWeight.toFixed(2)} KG</b> {hasRollMismatch && `(Avg: ${(selectedReceipt.sentWeight / selectedReceipt.sentRolls).toFixed(2)} KG/Roll)`}</div>
                       <div>Actual Received: <b>{selectedReceipt.receivedRolls} Rolls / {selectedReceipt.receivedWeight.toFixed(2)} KG</b></div>
-                      <div>Expected Weight (for {selectedReceipt.receivedRolls} Roll): <b>{((selectedReceipt.sentWeight / selectedReceipt.sentRolls) * selectedReceipt.receivedRolls).toFixed(2)} KG</b></div>
-                      <div>Actual Shortage on Recd. Roll: <strong style={{ color: '#dc2626' }}>{(((selectedReceipt.sentWeight / selectedReceipt.sentRolls) * selectedReceipt.receivedRolls) - selectedReceipt.receivedWeight).toFixed(2)} KG ({(((((selectedReceipt.sentWeight / selectedReceipt.sentRolls) * selectedReceipt.receivedRolls) - selectedReceipt.receivedWeight) / ((selectedReceipt.sentWeight / selectedReceipt.sentRolls) * selectedReceipt.receivedRolls)) * 100).toFixed(2)}%)</strong></div>
+                      <div>Expected Weight {hasRollMismatch && `(for ${selectedReceipt.receivedRolls} Roll)`}: <b>{expectedWeight.toFixed(2)} KG</b></div>
+                      <div>Actual Shortage {hasRollMismatch && "on Recd. Roll"}: <strong style={{ color: '#dc2626' }}>{actualShortage.toFixed(2)} KG ({actualShortagePct.toFixed(2)}%)</strong></div>
                     </div>
                   </div>
                 )}
@@ -820,8 +977,8 @@ export default function ReportsPage() {
                     <tr style={{ borderBottom: '1px solid #000' }}>
                       <th colSpan="3" style={thStyle}>Rolls</th>
                       <th colSpan="3" style={thStyle}>Qty in KGS</th>
-                      <th rowSpan="2" style={thStyle}>Short / Std Short(Kgs.)</th>
-                      <th rowSpan="2" style={thStyle}>Short / Std Short(%)</th>
+                      <th rowSpan="2" style={thStyle}>Std Short(Kgs.)</th>
+                      <th rowSpan="2" style={thStyle}>Std Short(%)</th>
                     </tr>
                     <tr style={{ borderBottom: '1px solid #000' }}>
                       <th style={thStyle}>Issued</th>
@@ -849,6 +1006,38 @@ export default function ReportsPage() {
                     </tr>
                   </tbody>
                 </table>
+
+                <div style={{ marginTop: '14px', marginBottom: '14px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 'bold', borderBottom: '1px solid #000', paddingBottom: '4px', marginBottom: '6px', textAlign: 'left' }}>
+                    RECEIVED ROLLS DETAILS & STORAGE LOCATIONS
+                  </div>
+                  {isLoadingLotRolls ? (
+                    <div style={{ fontSize: '11px', textAlign: 'center', padding: '8px', color: '#4b5563' }}>Loading rolls details...</div>
+                  ) : lotRolls.length === 0 ? (
+                    <div style={{ fontSize: '11px', textAlign: 'center', padding: '8px', color: '#6b7280' }}>No rolls received yet.</div>
+                  ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #000', textAlign: 'center' }}>
+                      <thead>
+                        <tr>
+                          <th style={thStyle}>Roll No.</th>
+                          <th style={thStyle}>Barcode ID</th>
+                          <th style={thStyle}>Received Weight</th>
+                          <th style={thStyle}>Storage Location (Shelf)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lotRolls.map((roll, idx) => (
+                          <tr key={roll.id || idx}>
+                            <td style={tdStyle}>Roll {roll.rollNumber} of {roll.batchTotal || selectedReceipt.sentRolls}</td>
+                            <td style={{ ...tdStyle, fontWeight: 'bold' }}>{roll.barcodeId}</td>
+                            <td style={{ ...tdStyle, fontWeight: 'bold' }}>{parseFloat(roll.weight).toFixed(2)} KG</td>
+                            <td style={tdStyle}>{roll.location && roll.location !== '—' ? roll.location : ''}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px', fontSize: '12px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

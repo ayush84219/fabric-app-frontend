@@ -160,11 +160,8 @@ export default function Recommandation() {
     setError('');
     setParsedOcrData(null);
 
-    const formData = new FormData();
-    formData.append('image', file);
-
     try {
-      const res = await store.parseBillOcr(formData);
+      const res = await store.parseBillOcr(file);
       if (res.success && res.data) {
         setParsedOcrData(res.data);
         setSearchQuery(res.data.materialName || res.data.category || '');

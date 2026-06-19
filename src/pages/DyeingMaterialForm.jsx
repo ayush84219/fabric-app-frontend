@@ -1251,7 +1251,7 @@ const DyeingMaterialForm = () => {
           cmfName: lotData.cmfName || prev.cmfName,
           fabricName: lotData.fabricName || prev.fabricName,
           group: lotData.group || prev.group,
-          issuedShade: lotData.shade || prev.issuedShade,
+          issuedShade: lotData.issuedShade || lotData.shade || prev.issuedShade,
           billNumber: lotData.billNumber || prev.billNumber,
           date: lotData.date || prev.date,
           receivedPerson: lotData.receivedPerson || prev.receivedPerson,
@@ -1755,7 +1755,7 @@ const DyeingMaterialForm = () => {
             <History size={14} /> View History & Reprint
           </button>
           <a
-            href="https://docs.google.com/spreadsheets/d/13ArpFOD7idmpv7QIRJQkD-tfswtkH6rNnEANtv2M7Ek/edit?gid=0#gid=0"
+            href="https://docs.google.com/spreadsheets/d/1xvafKcozZqf9yeWoLil4Eaws9A0j7WDz1zpxItKfr1c/edit?gid=0#gid=0"
             target="_blank"
             rel="noopener noreferrer"
             className="btn-page-switch"
@@ -2050,7 +2050,13 @@ const DyeingMaterialForm = () => {
                 <div className="form-group" style={{ display: 'flex', gap: 10, flex: 1 }}>
                   <div style={{ flex: 1 }}>
                     <label className="form-label">Issued Shade <span className="required">*</span></label>
-                    <input className="form-control" placeholder="Prefilled from Lot" value={formData.issuedShade} disabled={true} />
+                    <input 
+                      className="form-control" 
+                      placeholder="Prefilled from Lot" 
+                      value={formData.issuedShade} 
+                      onChange={e => handleInputChange('issuedShade', e.target.value)}
+                      disabled={batchActive} 
+                    />
                   </div>
                   <div style={{ flex: 1 }}>
                     <label className="form-label">Received Shade <span className="required">*</span></label>
