@@ -95,12 +95,12 @@ export default function GRNPage() {
 
   const findBestLocation = (categoryVal, rollsCount = 0, currentShelves = shelves, currentRooms = rooms) => {
     const room = (currentRooms || []).find(r => r.category === categoryVal) || (currentRooms || [])[0];
-    if (!room) return 'A01-S01';
+    if (!room) return 'A-A-R1';
     const roomShelves = (currentShelves || []).filter(s => s.room === room.id);
     const available = roomShelves.find(s => (s.capacity - s.used) >= rollsCount);
     if (available) return available.id;
     if (roomShelves.length > 0) return roomShelves[0].id;
-    return 'A01-S01';
+    return 'A-A-R1';
   };
 
   useEffect(() => {
@@ -180,7 +180,7 @@ export default function GRNPage() {
       const res = await store.parseBillOcr(file);
       if (res.success && res.data) {
         const { supplier, poNumber, materialName, category, weight, rolls, invoiceNo } = res.data;
-        
+
         // Find best location for this category and rolls count
         const bestLoc = findBestLocation(category || 'Summer Fabric', parseInt(rolls) || 0);
 
@@ -485,8 +485,8 @@ export default function GRNPage() {
       `}</style>
       <div className="page-header">
         <div className="page-title-block" style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <button 
-            onClick={() => window.history.back()} 
+          <button
+            onClick={() => window.history.back()}
             className="btn btn-secondary btn-icon btn-sm"
             style={{ borderRadius: '50%', width: 32, height: 32, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 4 }}
             title="Go Back"
@@ -519,11 +519,11 @@ export default function GRNPage() {
                 <label
                   htmlFor="grn-ocr-upload"
                   className={`btn btn-secondary btn-sm ${isScanning ? 'disabled' : ''}`}
-                  style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: 6, 
-                    margin: 0, 
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    margin: 0,
                     cursor: isScanning ? 'not-allowed' : 'pointer',
                     background: 'var(--primary-light)',
                     color: 'var(--primary)',
@@ -606,7 +606,7 @@ export default function GRNPage() {
                   <input
                     className="form-control"
                     id="grn-location"
-                    placeholder="e.g. A01-S01"
+                    placeholder="e.g. A-A-R1"
                     value={form.location || ''}
                     onChange={e => set('location', e.target.value)}
                     style={{ flex: 1 }}

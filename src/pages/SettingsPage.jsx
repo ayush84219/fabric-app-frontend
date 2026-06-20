@@ -202,17 +202,27 @@ export default function SettingsPage({ darkMode, toggleDark }) {
   const handleAddRack = async () => {
     try {
       const existingRacks = await store.getRacksByRoom(rackRoom);
-      const nextNum = existingRacks.length + 1;
+      const usedLetters = new Set(existingRacks.map(r => r.id.split('-')[1]).filter(Boolean));
+      let nextZoneLetter = 'A';
+      let nextNum = 1;
+      for (let i = 0; i < 26; i++) {
+        const letter = String.fromCharCode(65 + i);
+        if (!usedLetters.has(letter)) {
+          nextZoneLetter = letter;
+          nextNum = i + 1;
+          break;
+        }
+      }
       const newRack = {
-        id: `${rackRoom}${String(nextNum).padStart(2, '0')}`,
+        id: `${rackRoom}-${nextZoneLetter}`,
         room: rackRoom,
         number: nextNum,
-        name: `Hall ${String(nextNum).padStart(2, '0')}`
+        name: `Zone ${nextZoneLetter}`
       };
       await store.addRack(newRack);
       setAlertPopup({
         title: 'Work Done',
-        message: `Successfully added Rack ${newRack.id} to ${rooms.find(r => r.id === rackRoom)?.name || rackRoom}!`,
+        message: `Successfully added Zone ${nextZoneLetter} (Rack ID: ${newRack.id}) to ${rooms.find(r => r.id === rackRoom)?.name || rackRoom}!`,
         type: 'success'
       });
       load();
@@ -225,20 +235,30 @@ export default function SettingsPage({ darkMode, toggleDark }) {
     if (!shelfRack) return;
     try {
       const existingShelves = await store.getShelvesForRack(shelfRack);
-      const nextNum = existingShelves.length + 1;
+      const usedNumbers = new Set(existingShelves.map(s => {
+        const parts = s.id.split('-R');
+        const num = parseInt(parts[parts.length - 1]);
+        return isNaN(num) ? s.number : num;
+      }).filter(Boolean));
+      
+      let nextNum = 1;
+      while (usedNumbers.has(nextNum)) {
+        nextNum++;
+      }
+
       const newShelf = {
-        id: `${shelfRack}-S${String(nextNum).padStart(2, '0')}`,
+        id: `${shelfRack}-R${nextNum}`,
         rack: shelfRack,
-        room: shelfRack.charAt(0),
+        room: shelfRack.split('-')[0],
         number: nextNum,
-        name: `Shelf S${String(nextNum).padStart(2, '0')}`,
+        name: `Rack R${nextNum}`,
         capacity: parseInt(shelfCap) || 500,
         used: 0
       };
       await store.addShelf(newShelf);
       setAlertPopup({
         title: 'Work Done',
-        message: `Successfully added Shelf ${newShelf.id} to Rack ${shelfRack}!`,
+        message: `Successfully added Rack R${nextNum} (Shelf ID: ${newShelf.id}) to Zone ${shelfRack}!`,
         type: 'success'
       });
       load();
@@ -524,11 +544,11 @@ export default function SettingsPage({ darkMode, toggleDark }) {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                       <div style={{ background: 'var(--bg)', padding: '10px 12px', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
                         <div style={{ fontSize: 20, fontWeight: 800, color: r.color }}>{rackCount}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Racks</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Zones</div>
                       </div>
                       <div style={{ background: 'var(--bg)', padding: '10px 12px', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
                         <div style={{ fontSize: 20, fontWeight: 800, color: r.color }}>{shelfCount}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Shelves</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Racks</div>
                       </div>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
@@ -546,7 +566,7 @@ export default function SettingsPage({ darkMode, toggleDark }) {
                       </div>
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '6px 10px', background: 'var(--bg)', borderRadius: 'var(--radius-sm)' }}>
-                      Location format: <b>{r.id}01-S01</b> to <b>{r.id}{String(rackCount).padStart(2, '0')}-S{String(shelves.filter(s => s.room === r.id && s.rack === `${r.id}01`).length).padStart(2, '0')}</b>
+                      Location format: <b>{r.id}-A-R1</b> (Room-Zone-Rack)
                     </div>
                   </div>
                 </div>
@@ -560,9 +580,9 @@ export default function SettingsPage({ darkMode, toggleDark }) {
               <div className="card-title"><Plus size={15} /> Expand Warehouse (Manage Racks & Shelves)</div>
             </div>
             <div className="card-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-              {/* Add Rack Form */}
+              {/* Add Zone Form */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 16, background: 'var(--bg)', borderRadius: 'var(--radius-md)' }}>
-                <h3 style={{ fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}><Warehouse size={16} /> Add New Rack</h3>
+                <h3 style={{ fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}><Warehouse size={16} /> Add New Zone</h3>
                 <div className="form-group">
                   <label className="form-label">Select Room / Hall</label>
                   <select className="form-control" value={rackRoom} onChange={e => setRackRoom(e.target.value)}>
@@ -570,29 +590,47 @@ export default function SettingsPage({ darkMode, toggleDark }) {
                   </select>
                 </div>
                 <button className="btn btn-primary" onClick={handleAddRack} style={{ marginTop: 8 }}>
-                  <Plus size={14} /> Add Rack
+                  <Plus size={14} /> Add Zone
                 </button>
               </div>
 
-              {/* Add Shelf Form */}
+              {/* Add Rack Form */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 16, background: 'var(--bg)', borderRadius: 'var(--radius-md)' }}>
-                <h3 style={{ fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}><Package size={16} /> Add New Shelf</h3>
+                <h3 style={{ fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}><Package size={16} /> Add New Rack</h3>
                 <div className="form-group">
-                  <label className="form-label">Select Rack</label>
+                  <label className="form-label">Select Zone</label>
                   <select className="form-control" value={shelfRack} onChange={e => setShelfRack(e.target.value)}>
-                    <option value="">-- Choose Rack --</option>
+                    <option value="">-- Choose Zone --</option>
                     {racks.map(r => {
                       const roomName = rooms.find(rm => rm.id === r.room)?.name || r.room;
-                      return <option key={r.id} value={r.id}>{roomName} — Rack {r.id}</option>;
+                      return <option key={r.id} value={r.id}>{roomName} — Zone {r.id.split('-')[1] || r.id}</option>;
                     })}
                   </select>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Shelf Capacity (Rolls)</label>
+                  <label className="form-label">Rack Capacity (Rolls)</label>
                   <input className="form-control" type="number" value={shelfCap} onChange={e => setShelfCap(e.target.value)} placeholder="e.g. 500" />
                 </div>
                 <button className="btn btn-primary" onClick={handleAddShelf} style={{ marginTop: 8 }} disabled={!shelfRack}>
-                  <Plus size={14} /> Add Shelf
+                  <Plus size={14} /> Add Rack
+                </button>
+              </div>
+
+              {/* Remove Zone Form */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 16, background: 'var(--bg)', borderRadius: 'var(--radius-md)' }}>
+                <h3 style={{ fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--danger)' }}><Trash2 size={16} /> Remove Zone</h3>
+                <div className="form-group">
+                  <label className="form-label">Select Zone to Remove</label>
+                  <select className="form-control" value={deleteRackId} onChange={e => setDeleteRackId(e.target.value)}>
+                    <option value="">-- Choose Zone --</option>
+                    {racks.map(r => {
+                      const roomName = rooms.find(rm => rm.id === r.room)?.name || r.room;
+                      return <option key={r.id} value={r.id}>{roomName} — Zone {r.id.split('-')[1] || r.id}</option>;
+                    })}
+                  </select>
+                </div>
+                <button className="btn btn-danger" onClick={handleRemoveRack} style={{ marginTop: 8 }} disabled={!deleteRackId}>
+                  <Trash2 size={14} /> Remove Zone
                 </button>
               </div>
 
@@ -601,34 +639,16 @@ export default function SettingsPage({ darkMode, toggleDark }) {
                 <h3 style={{ fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--danger)' }}><Trash2 size={16} /> Remove Rack</h3>
                 <div className="form-group">
                   <label className="form-label">Select Rack to Remove</label>
-                  <select className="form-control" value={deleteRackId} onChange={e => setDeleteRackId(e.target.value)}>
-                    <option value="">-- Choose Rack --</option>
-                    {racks.map(r => {
-                      const roomName = rooms.find(rm => rm.id === r.room)?.name || r.room;
-                      return <option key={r.id} value={r.id}>{roomName} — Rack {r.id}</option>;
-                    })}
-                  </select>
-                </div>
-                <button className="btn btn-danger" onClick={handleRemoveRack} style={{ marginTop: 8 }} disabled={!deleteRackId}>
-                  <Trash2 size={14} /> Remove Rack
-                </button>
-              </div>
-
-              {/* Remove Shelf Form */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 16, background: 'var(--bg)', borderRadius: 'var(--radius-md)' }}>
-                <h3 style={{ fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--danger)' }}><Trash2 size={16} /> Remove Shelf</h3>
-                <div className="form-group">
-                  <label className="form-label">Select Shelf to Remove</label>
                   <select className="form-control" value={deleteShelfId} onChange={e => setDeleteShelfId(e.target.value)}>
-                    <option value="">-- Choose Shelf --</option>
+                    <option value="">-- Choose Rack --</option>
                     {shelves.map(s => {
                       const roomName = rooms.find(rm => rm.id === s.room)?.name || s.room;
-                      return <option key={s.id} value={s.id}>{roomName} — {s.id} (Used: {s.used}/{s.capacity})</option>;
+                      return <option key={s.id} value={s.id}>{roomName} — Rack {s.id.split('-')[2]} in Zone {s.rack.split('-')[1]} (Used: {s.used}/{s.capacity})</option>;
                     })}
                   </select>
                 </div>
                 <button className="btn btn-danger" onClick={handleRemoveShelf} style={{ marginTop: 8 }} disabled={!deleteShelfId}>
-                  <Trash2 size={14} /> Remove Shelf
+                  <Trash2 size={14} /> Remove Rack
                 </button>
               </div>
             </div>
@@ -782,19 +802,19 @@ export default function SettingsPage({ darkMode, toggleDark }) {
             </div>
           </div>
 
-          {/* Shelf Capacity Settings Info */}
+          {/* Rack Capacity Settings Info */}
           <div className="card">
-            <div className="card-header"><div className="card-title"><Package size={15} /> Shelf Capacity Configuration</div></div>
+            <div className="card-header"><div className="card-title"><Package size={15} /> Rack Capacity Configuration</div></div>
             <div className="card-body">
               <div className="alert alert-info" style={{ marginBottom: 16, fontSize: 13 }}>
                 <Settings size={14} />
-                Each shelf has a standard capacity of <b>500 Rolls</b>. The system automatically assigns locations based on available capacity and material category.
+                Each rack has a standard capacity of <b>500 Rolls</b>. The system automatically assigns locations based on available capacity and material category.
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
                 {[
                   { label: 'Total Rooms', value: rooms.length },
-                  { label: 'Total Racks', value: racks.length },
-                  { label: 'Total Shelves', value: shelves.length },
+                  { label: 'Total Zones', value: racks.length },
+                  { label: 'Total Racks', value: shelves.length },
                   { label: 'Total Capacity', value: `${(shelves.reduce((sum, s) => sum + s.capacity, 0)).toLocaleString()} Rolls` },
                 ].map(s => (
                   <div key={s.label} style={{ background: 'var(--bg)', padding: '14px', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>

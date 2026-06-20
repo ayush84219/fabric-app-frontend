@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { store } from '../store.js';
-import { BarChart3, Download, FileText, TrendingUp, Package, Warehouse, Users, Search } from 'lucide-react';
+import { BarChart3, Download, FileText, TrendingUp, Package, Warehouse, Users, Search, Printer } from 'lucide-react';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
@@ -34,6 +34,7 @@ export default function ReportsPage() {
   const [lotRolls, setLotRolls] = useState([]);
   const [isLoadingLotRolls, setIsLoadingLotRolls] = useState(false);
   const [dyeingSearchQuery, setDyeingSearchQuery] = useState('');
+  const [warehouseSearchQuery, setWarehouseSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
   const formatDate = (dateStr) => {
@@ -42,16 +43,33 @@ export default function ReportsPage() {
     return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('en-GB');
   };
 
+  const getShelfStatus = (shelf) => {
+    const pct = shelf.capacity > 0 ? Math.round((shelf.used / shelf.capacity) * 100) : 0;
+    let status = 'empty';
+    if (pct >= 90) status = 'full';
+    else if (pct > 0) status = 'partial';
+    return { pct, status };
+  };
+
   const handleOpenReceipt = async (receipt) => {
     setSelectedReceipt(receipt);
     setLotRolls([]);
     setIsLoadingLotRolls(true);
     try {
       const rolls = await store.getDyeingMaterials();
-      const filtered = rolls.filter(r =>
-        (r.lotNumber && String(r.lotNumber).toLowerCase() === String(receipt.lotNumber).toLowerCase()) ||
-        (r.billNumber && String(r.billNumber).toLowerCase() === String(receipt.billNumber).toLowerCase())
-      );
+      const filtered = rolls.filter(r => {
+        const receiptLot = String(receipt.lotNumber || '').trim().toLowerCase();
+        const rollLot = String(r.lotNumber || '').trim().toLowerCase();
+        if (receiptLot && receiptLot !== '—') {
+          return rollLot === receiptLot;
+        }
+        const receiptBill = String(receipt.billNumber || '').trim().toLowerCase();
+        const rollBill = String(r.billNumber || '').trim().toLowerCase();
+        if (receiptBill && receiptBill !== '—') {
+          return rollBill === receiptBill;
+        }
+        return false;
+      });
       // Sort by roll number ascending
       filtered.sort((a, b) => (a.rollNumber || 0) - (b.rollNumber || 0));
       setLotRolls(filtered);
@@ -147,6 +165,36 @@ export default function ReportsPage() {
     return { room: room.name, category: room.category, total, used, free: total - used, pct: total > 0 ? Math.round((used / total) * 100) : 0 };
   });
 
+  // Detailed Warehouse Material Placement Report Data
+  const warehouseReportData = shelves.map(shelf => {
+    const shelfRoom = rooms.find(r => r.id === shelf.room);
+    const zoneName = shelf.rack ? shelf.rack.split('-')[1] : '—';
+    const shelfMaterialsData = materials.filter(m => m && m.location === shelf.id);
+    return {
+      shelf,
+      roomName: shelfRoom ? shelfRoom.name : '—',
+      zoneName: `Zone ${zoneName}`,
+      shelfMaterials: shelfMaterialsData
+    };
+  });
+
+  const filteredWarehouseReport = warehouseReportData.filter(item => {
+    const query = warehouseSearchQuery.toLowerCase().trim();
+    if (!query) return true;
+    
+    const matchRoom = item.roomName.toLowerCase().includes(query);
+    const matchZone = item.zoneName.toLowerCase().includes(query);
+    const matchRack = item.shelf.id.toLowerCase().includes(query);
+    const matchMaterial = item.shelfMaterials.some(m => 
+      m.name?.toLowerCase().includes(query) || 
+      m.code?.toLowerCase().includes(query) ||
+      m.color?.toLowerCase().includes(query) ||
+      m.category?.toLowerCase().includes(query)
+    );
+    
+    return matchRoom || matchZone || matchRack || matchMaterial;
+  });
+
   // Movement Report
   const movementByDate = {};
   grns.forEach(g => {
@@ -175,7 +223,7 @@ export default function ReportsPage() {
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div className="print-block" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div className="page-header">
         <div className="page-title-block">
           <div className="breadcrumb"><span>Home</span><span>/</span><span>Reports</span></div>
@@ -185,9 +233,51 @@ export default function ReportsPage() {
         <div className="page-actions">
           <button className="btn btn-secondary btn-sm" id="export-report-btn"
             onClick={() => {
+              if (tab === 'warehouse') {
+                try {
+                  const headers = ['Room / Hall', 'Zone', 'Rack ID', 'Stored Material Codes', 'Stored Material Names', 'Stored Material Colors', 'Total Rolls', 'Used Capacity', 'Total Capacity', 'Utilization Pct (%)', 'Status'];
+                  const rows = filteredWarehouseReport.map(item => {
+                    const statusInfo = getShelfStatus(item.shelf);
+                    const materialCodes = item.shelfMaterials.map(m => m.code).join('; ');
+                    const materialNames = item.shelfMaterials.map(m => m.name).join('; ');
+                    const materialColors = item.shelfMaterials.map(m => m.color || 'No color').join('; ');
+                    const totalRolls = item.shelfMaterials.reduce((sum, m) => sum + (m.rolls || 0), 0);
+                    return [
+                      item.roomName,
+                      item.zoneName,
+                      item.shelf.id,
+                      materialCodes,
+                      materialNames,
+                      materialColors,
+                      totalRolls,
+                      item.shelf.used,
+                      item.shelf.capacity,
+                      statusInfo.pct,
+                      statusInfo.status.toUpperCase()
+                    ];
+                  });
+
+                  const csvContent = [
+                    headers.join(','),
+                    ...rows.map(row => row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))
+                  ].join('\n');
+
+                  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                  const url = URL.createObjectURL(blob);
+                  const link = document.createElement('a');
+                  link.href = url;
+                  link.setAttribute('download', `warehouse_placement_report_${new Date().toISOString().slice(0, 10)}.csv`);
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                } catch (e) {
+                  alert(`Export failed: ${e.message}`);
+                }
+                return;
+              }
+
               const dataMap = {
                 stock: stockData,
-                warehouse: roomData,
                 movement: movementData,
                 supplier: supplierData,
                 dyeing: dyeingReport.map(d => ({
@@ -319,7 +409,7 @@ export default function ReportsPage() {
 
       {/* WAREHOUSE REPORT */}
       {tab === 'warehouse' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div className="print-block" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           <div className="grid grid-3">
             {roomData.map(r => (
               <div key={r.room} className="card card-hover">
@@ -352,6 +442,171 @@ export default function ReportsPage() {
                   <Bar dataKey="free" fill="#10b981" radius={[4, 4, 0, 0]} name="Free (Rolls)" />
                 </BarChart>
               </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Warehouse Occupancy & Material Placement Report */}
+          <div className="card printable-report-card" style={{ marginTop: 10 }}>
+            <div className="card-header" style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 12,
+              padding: '16px 20px',
+              borderBottom: '1px solid var(--border)'
+            }}>
+              <div>
+                <div className="card-title" style={{ fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Package size={16} style={{ color: 'var(--primary)' }} />
+                  Warehouse Material Placement Report
+                </div>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  Comprehensive inventory map showing stored materials across all racks and zones
+                </span>
+              </div>
+              <div className="no-print" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                <button 
+                  className="btn btn-secondary btn-sm" 
+                  onClick={() => {
+                    document.body.classList.add('print-single-report');
+                    window.print();
+                    setTimeout(() => {
+                      document.body.classList.remove('print-single-report');
+                    }, 500);
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}
+                >
+                  <Printer size={14} /> Print Table
+                </button>
+                {/* Search Input */}
+                <div style={{ position: 'relative', width: '280px' }}>
+                  <input
+                    type="text"
+                    placeholder="Search rack, material name or code..."
+                    value={warehouseSearchQuery}
+                    onChange={e => setWarehouseSearchQuery(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px 8px 36px',
+                      fontSize: '12.5px',
+                      border: '1px solid var(--border)',
+                      borderRadius: '6px',
+                      backgroundColor: 'var(--bg)',
+                      color: 'var(--text-primary)',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  <Search
+                    size={14}
+                    style={{
+                      position: 'absolute',
+                      left: 12,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      color: 'var(--text-muted)'
+                    }}
+                  />
+                  {warehouseSearchQuery && (
+                    <button
+                      onClick={() => setWarehouseSearchQuery('')}
+                      style={{
+                        position: 'absolute',
+                        right: 10,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        fontSize: '16px',
+                        cursor: 'pointer',
+                        color: 'var(--text-muted)'
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="card-body" style={{ padding: 0 }}>
+              <div className="table-wrap" style={{ border: 'none', margin: 0 }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Room / Hall</th>
+                      <th>Zone</th>
+                      <th>Rack ID</th>
+                      <th>Stored Material(s)</th>
+                      <th>Total Rolls</th>
+                      <th>Utilized Capacity</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredWarehouseReport.map((item, idx) => {
+                      const statusInfo = getShelfStatus(item.shelf);
+                      return (
+                        <tr key={item.shelf.id} style={{ transition: 'background-color 0.15s' }}>
+                          <td style={{ fontWeight: 650 }}>{item.roomName}</td>
+                          <td style={{ fontWeight: 600 }}>{item.zoneName}</td>
+                          <td>
+                            <span className="tag" style={{ fontSize: '11px', fontWeight: 700, padding: '4px 8px' }}>
+                              {item.shelf.id}
+                            </span>
+                          </td>
+                          <td>
+                            {item.shelfMaterials.length === 0 ? (
+                              <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '12px' }}>— Empty —</span>
+                            ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {item.shelfMaterials.map((m, mIdx) => (
+                                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '12.5px' }}>
+                                    <span style={{ fontWeight: 700, color: 'var(--primary)', minWidth: '70px', display: 'inline-block' }}>{m.code}</span>
+                                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{m.name}</span>
+                                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>({m.color || 'No color'})</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ fontWeight: 700 }}>
+                            {item.shelfMaterials.reduce((sum, m) => sum + (m.rolls || 0), 0)} Rolls
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div className="progress-bar" style={{ width: '80px', height: '6px', background: 'var(--border)' }}>
+                                <div
+                                  className={`progress-fill ${statusInfo.pct >= 90 ? 'red' : statusInfo.pct >= 50 ? 'yellow' : 'green'}`}
+                                  style={{ width: `${statusInfo.pct}%` }}
+                                />
+                              </div>
+                              <span style={{ fontSize: '12px', fontWeight: 'bold' }}>
+                                {item.shelf.used} / {item.shelf.capacity} ({statusInfo.pct}%)
+                              </span>
+                            </div>
+                          </td>
+                          <td>
+                            <span className={`badge ${
+                              statusInfo.status === 'full' ? 'badge-danger' : 
+                              statusInfo.status === 'partial' ? 'badge-warning' : 'badge-success'
+                            }`}>
+                              {statusInfo.status.toUpperCase()}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {filteredWarehouseReport.length === 0 && (
+                      <tr>
+                        <td colSpan="7" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+                          No matching placement records found.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
@@ -591,16 +846,16 @@ export default function ReportsPage() {
                     transition: 'all 0.2s ease-in-out'
                   }}
                 />
-                <Search 
-                  size={14} 
-                  style={{ 
-                    position: 'absolute', 
-                    left: 12, 
-                    top: '50%', 
-                    transform: 'translateY(-50%)', 
+                <Search
+                  size={14}
+                  style={{
+                    position: 'absolute',
+                    left: 12,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
                     color: isSearchFocused ? 'var(--primary)' : 'var(--text-muted)',
                     transition: 'color 0.2s ease'
-                  }} 
+                  }}
                 />
                 {dyeingSearchQuery && (
                   <button

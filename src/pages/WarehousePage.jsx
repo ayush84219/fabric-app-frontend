@@ -48,38 +48,32 @@ export default function WarehousePage() {
   const roomRacks = racks.filter(r => r && r.room === selectedRoom);
 
   const getZoneStats = (zoneLetter) => {
-    const zoneRacks = racks.filter(r => r && r.id && r.room === 'C' && String(r.id).startsWith(`C-${zoneLetter}-`));
-    const zoneRackIds = zoneRacks.map(r => r.id);
-    const zoneShelves = shelves.filter(s => s && zoneRackIds.includes(s.rack));
+    const rackId = `${selectedRoom}-${zoneLetter}`;
+    const zoneShelves = shelves.filter(s => s && s.rack === rackId);
     const totalCap = zoneShelves.reduce((a, s) => a + s.capacity, 0);
     const totalUsed = zoneShelves.reduce((a, s) => a + s.used, 0);
     return totalCap > 0 ? Math.round((totalUsed / totalCap) * 100) : 0;
   };
 
-  const getRackStatus = (rackId) => {
-    const rs = shelves.filter(s => s && s.rack === rackId);
-    const total = rs.reduce((a, s) => a + s.capacity, 0);
-    const used = rs.reduce((a, s) => a + s.used, 0);
-    const pct = total > 0 ? Math.round((used / total) * 100) : 0;
+  const getShelfStatus = (shelf) => {
+    if (!shelf) return { pct: 0, status: 'empty' };
+    const pct = shelf.capacity > 0 ? Math.round((shelf.used / shelf.capacity) * 100) : 0;
     return { pct, status: pct === 0 ? 'empty' : pct >= 90 ? 'full' : 'partial' };
   };
 
-  const rackShelves = selectedRack
-    ? shelves.filter(s => s && s.rack === selectedRack).map(s => ({
-      ...s,
-      pct: s.capacity > 0 ? Math.round((s.used / s.capacity) * 100) : 0,
-    }))
-    : [];
+  const renderZoneGrid = (zoneLetter) => {
+    const rackId = `${selectedRoom}-${zoneLetter}`;
+    const zoneShelves = shelves.filter(s => s && s.rack === rackId);
+    
+    // Sort shelves by their number or ID so R1, R2, R3 are ordered correctly
+    zoneShelves.sort((a, b) => (a.number || 0) - (b.number || 0));
 
-  const renderZoneGrid = (zoneLetter, rows, cols, title, racksCount) => {
-    const zoneRacks = racks.filter(r => r && r.id && r.room === 'C' && String(r.id).startsWith(`C-${zoneLetter}-`));
-    const zoneRackIds = zoneRacks.map(r => r.id);
-    const zoneShelves = shelves.filter(s => s && zoneRackIds.includes(s.rack));
     const totalCap = zoneShelves.reduce((a, s) => a + s.capacity, 0);
     const totalUsed = zoneShelves.reduce((a, s) => a + s.used, 0);
     const utilPct = totalCap > 0 ? Math.round((totalUsed / totalCap) * 100) : 0;
 
-    const cells = Array.from({ length: racksCount }, (_, i) => i + 1);
+    const cols = 3;
+    const title = `Zone ${zoneLetter} (${cols}x${Math.ceil(zoneShelves.length / cols)} Racks)`;
 
     return (
       <div style={{
@@ -115,12 +109,10 @@ export default function WarehousePage() {
           gridTemplateColumns: `repeat(${cols}, 1fr)`,
           gap: '4px'
         }}>
-          {cells.map(num => {
-            const rackId = `C-${zoneLetter}-R${num}`;
-            const rack = racks.find(r => r.id === rackId);
-            const { pct, status } = rack ? getRackStatus(rackId) : { pct: 0, status: 'empty' };
-
-            const isSelected = selectedRack === rackId;
+          {zoneShelves.map(shelf => {
+            const { pct, status } = getShelfStatus(shelf);
+            const isSelected = selectedShelf === shelf.id;
+            
             let bg = '#dcfce7';
             let color = '#166534';
             let border = '1.5px solid #bbf7d0';
@@ -130,19 +122,17 @@ export default function WarehousePage() {
               color = '#1e40af';
               border = '1.5px solid #bfdbfe';
             } else if (status === 'full') {
-              bg = '#fef9c3';
-              color = '#854d0e';
-              border = '1.5px solid #fde68a';
+              bg = '#fee2e2';
+              color = '#991b1b';
+              border = '1.5px solid #fecaca';
             }
 
             return (
               <div
-                key={rackId}
+                key={shelf.id}
                 onClick={() => {
-                  if (rack) {
-                    setSelectedRack(rackId === selectedRack ? null : rackId);
-                    setSelectedShelf(null);
-                  }
+                  setSelectedRack(rackId);
+                  setSelectedShelf(shelf.id === selectedShelf ? null : shelf.id);
                 }}
                 style={{
                   background: bg,
@@ -155,25 +145,29 @@ export default function WarehousePage() {
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  cursor: rack ? 'pointer' : 'default',
+                  cursor: 'pointer',
                   transition: 'all 0.15s ease',
-                  transform: isSelected ? 'scale(1.05)' : 'none',
-                  opacity: rack ? 1 : 0.4
+                  transform: isSelected ? 'scale(1.05)' : 'none'
                 }}
               >
-                <span style={{ fontSize: '9px', fontWeight: '800' }}>R{num}</span>
-                {rack && <span style={{ fontSize: '7px', opacity: 0.8, fontWeight: '600' }}>{pct}%</span>}
+                <span style={{ fontSize: '18px', fontWeight: '800', lineHeight: '1.2' }}>R{shelf.number}</span>
+                <span style={{ fontSize: '14px', opacity: 0.9, fontWeight: '700', lineHeight: '1.2', marginTop: '2px' }}>{pct}%</span>
               </div>
             );
           })}
+          {zoneShelves.length === 0 && (
+            <div style={{ gridColumn: 'span 3', fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center', padding: '10px 0' }}>
+              No racks in this zone yet.
+            </div>
+          )}
         </div>
       </div>
     );
   };
 
-  const shelfMaterials = selectedRoom === 'C'
-    ? (selectedRack ? materials.filter(m => m && m.location && m.location.startsWith(selectedRack)) : [])
-    : (selectedShelf ? materials.filter(m => m && m.location === selectedShelf) : []);
+  const shelfMaterials = selectedShelf ? materials.filter(m => m && m.location === selectedShelf) : [];
+
+
 
   const getSupplierName = (id) => suppliers.find(s => s.id === id)?.name || '—';
 
@@ -224,12 +218,14 @@ export default function WarehousePage() {
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <div className="page-header">
+    <div className="print-block" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
         <div className="page-title-block">
           <div className="breadcrumb"><span>Home</span><span>/</span><span>Warehouse</span></div>
-          <h1>Warehouse Management</h1>
+          <h1 style={{ margin: 0 }}>Warehouse Management</h1>
         </div>
+
       </div>
 
       {/* Room Summary Cards grouped by Floor */}
@@ -294,260 +290,169 @@ export default function WarehousePage() {
               <Warehouse size={15} />
               {rooms.find(r => r.id === selectedRoom)?.name} — Rack Layout
             </div>
-            {selectedRoom !== 'C' && (
-              <div style={{ display: 'flex', gap: 12, fontSize: 12 }}>
-                {['empty', 'partial', 'full'].map(s => (
-                  <span key={s} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{
-                      width: 12, height: 12, borderRadius: 3, display: 'inline-block',
-                      background: s === 'empty' ? '#dcfce7' : s === 'partial' ? '#fef9c3' : '#fee2e2',
-                      border: `1px solid ${s === 'empty' ? '#bbf7d0' : s === 'partial' ? '#fde68a' : '#fecaca'}`
-                    }} />
-                    {s.charAt(0).toUpperCase() + s.slice(1)}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="card-body" style={{ background: selectedRoom === 'C' ? '#f8fafc' : 'transparent', padding: selectedRoom === 'C' ? '16px' : '20px' }}>
-            {selectedRoom === 'C' ? (
-              /* Custom Hall 3 Warehouse Design layout */
-              <div style={{
-                background: '#ffffff',
-                border: '2px solid #475569',
-                borderRadius: '12px',
-                padding: '24px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '16px',
-                position: 'relative',
-                boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)'
-              }}>
-                {/* Title Block */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #cbd5e1', paddingBottom: '12px', marginBottom: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Building2 size={20} style={{ color: '#f59e0b' }} />
-                    <span style={{ fontSize: '18px', fontWeight: '800', color: '#1e293b', letterSpacing: '0.5px' }}>
-                      HALL-3 WAREHOUSE LAYOUT
-                    </span>
-                  </div>
-                  {/* Compass */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '11px', fontWeight: '800', color: '#64748b' }}>N</span>
-                    <div style={{
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '50%',
-                      border: '1.5px solid #64748b',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '11px',
-                      fontWeight: 'bold',
-                      color: '#64748b'
-                    }}>
-                      ↑
-                    </div>
-                  </div>
-                </div>
-
-                {/* Zone Tab Selector */}
-                <div style={{
-                  display: 'flex',
-                  gap: '12px',
-                  justifyContent: 'center',
-                  marginBottom: '16px',
-                  flexWrap: 'wrap'
-                }}>
-                  {['A', 'B', 'C', 'D'].map(z => {
-                    const isSelected = selectedZone === z;
-                    const util = getZoneStats(z);
-                    return (
-                      <button
-                        key={z}
-                        onClick={() => {
-                          setSelectedZone(z);
-                          setSelectedRack(null);
-                          setSelectedShelf(null);
-                        }}
-                        style={{
-                          flex: 1,
-                          minWidth: '120px',
-                          maxWidth: '180px',
-                          padding: '12px',
-                          borderRadius: '8px',
-                          border: isSelected ? '2.5px solid var(--primary)' : '1.5px solid #cbd5e1',
-                          background: isSelected ? 'var(--primary-light)' : '#ffffff',
-                          color: isSelected ? 'var(--primary)' : 'var(--text-secondary)',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          gap: '4px',
-                          fontWeight: '800',
-                          transition: 'all 0.15s ease',
-                          boxShadow: isSelected ? 'var(--shadow-sm)' : 'none',
-                          transform: isSelected ? 'scale(1.03)' : 'none'
-                        }}
-                      >
-                        <span style={{ fontSize: '13px' }}>ZONE {z}</span>
-                        <span style={{ fontSize: '10px', fontWeight: 'bold', opacity: 0.8 }}>Utilized: {util}%</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Display Selected Zone Grid */}
-                <div style={{ display: 'flex', justifyContent: 'center', width: '100%', marginTop: '10px' }}>
-                  <div style={{ width: '100%', maxWidth: '320px' }}>
-                    {selectedZone === 'A' && renderZoneGrid('A', 3, 3, 'Zone A (3x3 Racks)', 9)}
-                    {selectedZone === 'B' && renderZoneGrid('B', 5, 3, 'Zone B (3x5 Racks)', 15)}
-                    {selectedZone === 'D' && renderZoneGrid('D', 3, 3, 'Zone D (3x3 Racks)', 9)}
-                    {selectedZone === 'C' && renderZoneGrid('C', 3, 3, 'Zone C (3x3 Racks)', 9)}
-                  </div>
-                </div>
-
-                {/* Legend & Scale Block */}
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-end',
-                  marginTop: '8px',
-                  borderTop: '1px solid #cbd5e1',
-                  paddingTop: '12px',
-                  fontSize: '11px',
-                  color: '#64748b',
-                  flexWrap: 'wrap',
-                  gap: '12px'
-                }}>
-                  {/* Scale */}
-                  <div style={{ display: 'flex', gap: '20px' }}>
-                    {/* <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <span style={{ fontWeight: 'bold' }}>Scale: 0 - 5 - 10 Meters</span>
-                      <div style={{ display: 'flex', height: '4px', background: '#cbd5e1', width: '130px' }}>
-                        <div style={{ width: '25%', background: '#475569' }} />
-                        <div style={{ width: '25%', background: '#64748b' }} />
-                        <div style={{ width: '50%', background: '#94a3b8' }} />
-                      </div>
-                    </div> */}
-                    {/* <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <span style={{ fontWeight: 'bold' }}>Travel Time: 0 - 5 - 10 - 20 Min</span>
-                      <div style={{ display: 'flex', height: '4px', background: '#cbd5e1', width: '130px' }}>
-                        <div style={{ width: '15%', background: '#475569' }} />
-                        <div style={{ width: '15%', background: '#64748b' }} />
-                        <div style={{ width: '30%', background: '#94a3b8' }} />
-                        <div style={{ width: '40%', background: '#cbd5e1' }} />
-                      </div>
-                    </div> */}
-                  </div>
-
-                  {/* Legend */}
-                  <div style={{
-                    display: 'flex',
-                    gap: '12px',
-                    background: '#f8fafc',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid #cbd5e1'
-                  }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold', color: '#1e293b' }}>
-                      Legend:
-                    </span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#dcfce7', border: '1px solid #a5d6a7' }} />
-                      Empty
-                    </span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#dbeafe', border: '1px solid #90caf9' }} />
-                      Occupied
-                    </span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#ee3238ff', border: '1px solid #fff59d' }} />
-                      Reserved
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* Default Grid Layout for other rooms */
-              <div className="warehouse-grid" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
-                {roomRacks.map(rack => {
-                  const { status, pct } = getRackStatus(rack.id);
-                  return (
-                    <div
-                      key={rack.id}
-                      id={`warehouse-rack-${rack.id}`}
-                      className={`rack-cell ${status} ${selectedRack === rack.id ? 'selected' : ''}`}
-                      onClick={() => { setSelectedRack(rack.id === selectedRack ? null : rack.id); setSelectedShelf(null); }}
-                    >
-                      <span style={{ fontWeight: 700 }}>{rack.id}</span>
-                      <span className="rack-pct">{pct}%</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Shelf Detail */}
-        {selectedRoom !== 'C' && selectedRack && (
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title"><Box size={15} /> Rack {selectedRack} — Shelves</div>
-              <button className="btn btn-ghost btn-sm btn-icon" onClick={() => { setSelectedRack(null); setSelectedShelf(null); }}
-                style={{ fontSize: 18, lineHeight: 1, padding: '4px 8px' }}>×</button>
-            </div>
-            <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {rackShelves.map(shelf => (
-                <div
-                  key={shelf.id}
-                  id={`shelf-item-${shelf.id}`}
-                  style={{
-                    padding: '12px 14px',
-                    borderRadius: 'var(--radius-md)',
-                    border: `2px solid ${selectedShelf === shelf.id ? 'var(--primary)' : 'var(--border)'}`,
-                    cursor: 'pointer',
-                    background: selectedShelf === shelf.id ? 'var(--primary-light)' : 'var(--bg)',
-                    transition: 'var(--transition)',
-                  }}
-                  onClick={() => setSelectedShelf(shelf.id === selectedShelf ? null : shelf.id)}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                      S{String(shelf.number).padStart(2, '0')} — {shelf.id}
-                    </div>
-                    <span className={`badge ${shelf.pct >= 90 ? 'badge-danger' : shelf.pct >= 1 ? 'badge-warning' : 'badge-success'}`}>
-                      {shelf.pct === 0 ? 'Empty' : shelf.pct >= 90 ? 'Full' : 'Partial'}
-                    </span>
-                  </div>
-                  <div className="progress-bar" style={{ marginBottom: 8 }}>
-                    <div
-                      className={`progress-fill ${shelf.pct >= 90 ? 'red' : shelf.pct > 0 ? 'yellow' : 'green'}`}
-                      style={{ width: `${Math.max(shelf.pct, 1)}%` }}
-                    />
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-muted)' }}>
-                    <span>Capacity: <b style={{ color: 'var(--text-primary)' }}>{shelf.capacity} Roll</b></span>
-                    <span>Used: <b style={{ color: 'var(--text-primary)' }}>{shelf.used} Roll</b></span>
-                    <span>Free: <b style={{ color: 'var(--success)' }}>{shelf.capacity - shelf.used} Roll</b></span>
-                  </div>
-                </div>
+            <div style={{ display: 'flex', gap: 12, fontSize: 12 }}>
+              {['empty', 'partial', 'full'].map(s => (
+                <span key={s} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{
+                    width: 12, height: 12, borderRadius: 3, display: 'inline-block',
+                    background: s === 'empty' ? '#dcfce7' : s === 'partial' ? '#fef9c3' : '#fee2e2',
+                    border: `1px solid ${s === 'empty' ? '#bbf7d0' : s === 'partial' ? '#fde68a' : '#fecaca'}`
+                  }} />
+                  {s.charAt(0).toUpperCase() + s.slice(1)}
+                </span>
               ))}
             </div>
           </div>
-        )}
+          <div className="card-body" style={{ background: '#f8fafc', padding: '16px' }}>
+            <div style={{
+              background: '#ffffff',
+              border: '2px solid #475569',
+              borderRadius: '12px',
+              padding: '24px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+              position: 'relative',
+              boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)'
+            }}>
+              {/* Title Block */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #cbd5e1', paddingBottom: '12px', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Building2 size={20} style={{ color: '#f59e0b' }} />
+                  <span style={{ fontSize: '18px', fontWeight: '800', color: '#1e293b', letterSpacing: '0.5px' }}>
+                    {(rooms.find(r => r.id === selectedRoom)?.name || 'Warehouse').toUpperCase()} LAYOUT
+                  </span>
+                </div>
+                {/* Compass */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: '800', color: '#64748b' }}>N</span>
+                  <div style={{
+                    width: '24px',
+                    height: '24px',
+                    borderRadius: '50%',
+                    border: '1.5px solid #64748b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '11px',
+                    fontWeight: 'bold',
+                    color: '#64748b'
+                  }}>
+                    ↑
+                  </div>
+                </div>
+              </div>
+
+              {/* Zone Tab Selector */}
+              <div style={{
+                display: 'flex',
+                gap: '12px',
+                justifyContent: 'center',
+                marginBottom: '16px',
+                flexWrap: 'wrap'
+              }}>
+                {(Array.from(new Set(racks.filter(r => r && r.room === selectedRoom).map(r => r.id.split('-')[1]).filter(Boolean))).sort().length > 0
+                  ? Array.from(new Set(racks.filter(r => r && r.room === selectedRoom).map(r => r.id.split('-')[1]).filter(Boolean))).sort()
+                  : ['A', 'B', 'C', 'D']
+                ).map(z => {
+                  const isSelected = selectedZone === z;
+                  const util = getZoneStats(z);
+                  return (
+                    <button
+                      key={z}
+                      onClick={() => {
+                        setSelectedZone(z);
+                        setSelectedRack(null);
+                        setSelectedShelf(null);
+                      }}
+                      style={{
+                        flex: 1,
+                        minWidth: '120px',
+                        maxWidth: '180px',
+                        padding: '12px',
+                        borderRadius: '8px',
+                        border: isSelected ? '2.5px solid var(--primary)' : '1.5px solid #cbd5e1',
+                        background: isSelected ? 'var(--primary-light)' : '#ffffff',
+                        color: isSelected ? 'var(--primary)' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontWeight: '800',
+                        transition: 'all 0.15s ease',
+                        boxShadow: isSelected ? 'var(--shadow-sm)' : 'none',
+                        transform: isSelected ? 'scale(1.03)' : 'none'
+                      }}
+                    >
+                      <span style={{ fontSize: '13px' }}>ZONE {z}</span>
+                      <span style={{ fontSize: '10px', fontWeight: 'bold', opacity: 0.8 }}>Utilized: {util}%</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Display Selected Zone Grid */}
+              <div style={{ display: 'flex', justifyContent: 'center', width: '100%', marginTop: '10px' }}>
+                <div style={{ width: '100%', maxWidth: '320px' }}>
+                  {renderZoneGrid(selectedZone)}
+                </div>
+              </div>
+
+              {/* Legend & Scale Block */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-end',
+                marginTop: '8px',
+                borderTop: '1px solid #cbd5e1',
+                paddingTop: '12px',
+                fontSize: '11px',
+                color: '#64748b',
+                flexWrap: 'wrap',
+                gap: '12px'
+              }}>
+                <div style={{ display: 'flex', gap: '20px' }}>
+                </div>
+
+                {/* Legend */}
+                <div style={{
+                  display: 'flex',
+                  gap: '12px',
+                  background: '#f8fafc',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1'
+                }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold', color: '#1e293b' }}>
+                    Legend:
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#dcfce7', border: '1px solid #a5d6a7' }} />
+                    Empty
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#dbeafe', border: '1px solid #90caf9' }} />
+                    Occupied
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#fef9c3', border: '1px solid #fde68a' }} />
+                    Full
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Materials in Selected Shelf */}
-      {(selectedRoom === 'C' ? selectedRack : selectedShelf) && (
+      {selectedShelf && (
         <div className="card">
           <div className="card-header">
             <div className="card-title">
               <Package size={15} />{' '}
-              {selectedRoom === 'C'
-                ? `Materials in Rack: ${selectedRack}`
-                : `Materials in Shelf: ${selectedShelf}`}
+              Materials in Rack: {selectedShelf}
             </div>
             <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{shelfMaterials.length} material(s)</span>
           </div>
@@ -597,6 +502,7 @@ export default function WarehousePage() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

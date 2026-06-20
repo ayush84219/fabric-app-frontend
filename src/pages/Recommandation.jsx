@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { store } from '../store.js';
 import {
   Search, Sparkles, Box, Layers, CheckCircle2, AlertCircle,
@@ -16,6 +17,7 @@ const SUB_CATS = {
 const UNITS = ['Roll'];
 
 export default function Recommandation() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [rooms, setRooms] = useState([]);
@@ -29,23 +31,7 @@ export default function Recommandation() {
   // Search query
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Placement Modal states
-  const [selectedShelf, setSelectedShelf] = useState(null);
-  const [showPlacementModal, setShowPlacementModal] = useState(false);
-  const [modalForm, setModalForm] = useState({
-    name: '',
-    category: CATEGORIES[0],
-    subCategory: SUB_CATS[CATEGORIES[0]][0],
-    color: '',
-    supplier: '',
-    weight: '100',
-    rolls: '5',
-    unit: 'Roll',
-    status: 'Active',
-    billNumber: '',
-    poNumber: '',
-  });
-  const [formError, setFormError] = useState('');
+
   const [successToast, setSuccessToast] = useState('');
 
   // --- VOICE AGENT STATES ---
@@ -302,6 +288,40 @@ export default function Recommandation() {
 
   const { sameMaterialRacks, newRacks, matchedMaterialsCount, targetCategory } = getRecommendations();
 
+  // --- FRIENDLY SPEECH LOCATION TRANSLATORS ---
+  const getFriendlyLocation = (shelfId) => {
+    if (!shelfId) return '';
+    const parts = shelfId.split('-');
+    const roomId = parts[0];
+    const zoneLetter = parts[1];
+    const rackNum = parts[2];
+
+    const hallName = roomId === 'A' ? 'Hall 1' : roomId === 'B' ? 'Hall 2' : roomId === 'C' ? 'Hall 3' : `Hall ${roomId}`;
+    const zoneName = zoneLetter ? `Zone ${zoneLetter.toUpperCase()}` : '';
+    const rackName = rackNum ? `Rack ${rackNum.toUpperCase()}` : '';
+
+    let speech = '';
+    if (hallName) speech += `${hallName}`;
+    if (zoneName) speech += ` ke ${zoneName}`;
+    if (rackName) speech += ` ke ${rackName}`;
+    return speech;
+  };
+
+  const getFriendlyZone = (zoneId) => {
+    if (!zoneId) return '';
+    const parts = zoneId.split('-');
+    const roomId = parts[0];
+    const zoneLetter = parts[1];
+
+    const hallName = roomId === 'A' ? 'Hall 1' : roomId === 'B' ? 'Hall 2' : roomId === 'C' ? 'Hall 3' : `Hall ${roomId}`;
+    const zoneName = zoneLetter ? `Zone ${zoneLetter.toUpperCase()}` : '';
+
+    let speech = '';
+    if (hallName) speech += `${hallName}`;
+    if (zoneName) speech += ` ke ${zoneName}`;
+    return speech;
+  };
+
   // --- SPEECH OUTPUT UTILITY ---
   const speakHindiText = (text, callbackOnEnd = null) => {
     if (!window.speechSynthesis) return;
@@ -426,14 +446,15 @@ export default function Recommandation() {
       let replySpeech = '';
       if (placements.length === 1) {
         const p = placements[0];
-        replySpeech = `Same types ka material Room ${p.roomName} ke Rack ${p.rackId} ke Shelf ${p.shelves.join(', ')} me pehle se hi hai. Aap wahan store kar sakte hain.`;
+        const friendlyShelves = p.shelves.map(s => getFriendlyLocation(s)).join(', ');
+        replySpeech = `Same types ka material ${friendlyShelves} me pehle se hi hai. Aap wahan store kar sakte hain.`;
       } else if (placements.length > 1) {
-        const listText = placements.map(p => `Rack ${p.rackId} ke Shelf ${p.shelves.join(', ')}`).join(', aur ');
-        replySpeech = `Same types ka material ek se zyada racks me stored hai: ${listText} me hai. Aap inme se kisi bhi location par store kar sakte hain.`;
+        const listText = placements.map(p => p.shelves.map(s => getFriendlyLocation(s)).join(', aur ')).join(', aur ');
+        replySpeech = `Same types ka material ek se zyada jagah par hai: ${listText} me hai. Aap inme se kisi bhi location par store kar sakte hain.`;
       } else {
         const bestRack = results.sameMaterialRacks[0];
-        const roomName = bestRack.roomInfo?.name || `Room ${bestRack.room}`;
-        replySpeech = `Room ${roomName} ke Rack ${bestRack.id} me same types ka material pehle se hi hai.`;
+        const friendlyZone = getFriendlyZone(bestRack.id);
+        replySpeech = `${friendlyZone} me same types ka material pehle se hi hai.`;
       }
       updateAgentSpeech(replySpeech);
     } else {
@@ -444,7 +465,8 @@ export default function Recommandation() {
 
       let replySpeech = `Same types ka material kisi bhi rack me nahi mila. `;
       if (matchingRack) {
-        replySpeech += `Naye material ke liye room ${matchingRoom?.name || matchingRoom?.id} ke rack ${matchingRack.id} me jagah chune.`;
+        const friendlyZone = getFriendlyZone(matchingRack.id);
+        replySpeech += `Naye material ke liye ${friendlyZone} me jagah chune.`;
       } else {
         replySpeech += `Naye material ke liye jagah chune.`;
       }
@@ -461,77 +483,9 @@ export default function Recommandation() {
     processVoiceInput(userInput);
   };
 
-  // Handle opening placement modal
+  // Handle redirecting to Material Add page (FabricStickerForm)
   const handleOpenPlacement = (shelf) => {
-    setSelectedShelf(shelf);
-
-    const shelfRoom = rooms.find(r => r.id === shelf.room);
-    const categoryGuess = shelfRoom ? shelfRoom.category : CATEGORIES[0];
-    const subCategoryGuess = SUB_CATS[categoryGuess]?.[0] || '';
-
-    if (parsedOcrData) {
-      setModalForm({
-        name: parsedOcrData.materialName || '',
-        category: parsedOcrData.category || categoryGuess,
-        subCategory: parsedOcrData.subCategory || subCategoryGuess,
-        color: parsedOcrData.color || '',
-        supplier: parsedOcrData.supplier || suppliers[0]?.id || '',
-        weight: String(parsedOcrData.weight || 0),
-        rolls: String(parsedOcrData.rolls || 0),
-        unit: parsedOcrData.unit || 'Roll',
-        status: 'Active',
-        billNumber: parsedOcrData.invoiceNo || '',
-        poNumber: parsedOcrData.poNumber || ''
-      });
-    } else {
-      let nameGuess = searchQuery;
-      if (nameGuess) {
-        nameGuess = nameGuess.charAt(0).toUpperCase() + nameGuess.slice(1);
-      }
-      setModalForm({
-        name: nameGuess || 'New Material',
-        category: categoryGuess,
-        subCategory: subCategoryGuess,
-        color: '',
-        supplier: suppliers[0]?.id || '',
-        weight: '100',
-        rolls: '10',
-        unit: 'Roll',
-        status: 'Active',
-        billNumber: '',
-        poNumber: ''
-      });
-    }
-    setFormError('');
-    setShowPlacementModal(true);
-  };
-
-  const handleSavePlacement = async () => {
-    setFormError('');
-    if (!modalForm.name.trim() || !modalForm.supplier) {
-      setFormError('Please fill in Material Name and select a Supplier.');
-      return;
-    }
-
-    const payload = {
-      ...modalForm,
-      rolls: parseInt(modalForm.rolls) || 0,
-      weight: parseFloat(modalForm.weight) || 0,
-      stockKg: parseFloat(modalForm.weight) || 0,
-      location: selectedShelf.id,
-    };
-
-    try {
-      await store.addMaterial(payload);
-      setSuccessToast(`Successfully stored "${payload.name}" in Shelf ${selectedShelf.id}!`);
-      setShowPlacementModal(false);
-      setParsedOcrData(null); // Clear OCR parsed data
-      loadData(); // reload stats
-      setTimeout(() => setSuccessToast(''), 5000);
-    } catch (e) {
-      console.error(e);
-      setFormError(e.message || 'Error saving material data.');
-    }
+    navigate('/fabric-sticker', { state: { prefilledLocation: shelf.id } });
   };
 
   return (
@@ -1073,150 +1027,7 @@ export default function Recommandation() {
         </>
       )}
 
-      {/* PLACEMENT / STORAGE MODAL */}
-      {showPlacementModal && selectedShelf && (
-        <div className="modal-overlay" style={{ zIndex: 1100, backdropFilter: 'none', background: 'rgba(0, 0, 0, 0.4)' }}>
-          <div className="modal" style={{ maxWidth: '600px' }}>
-            <div className="modal-header">
-              <div className="modal-title">
-                <Box size={18} style={{ color: 'var(--primary)' }} />
-                Store Material in Shelf {selectedShelf.id}
-              </div>
-              <button className="btn btn-ghost btn-icon" onClick={() => setShowPlacementModal(false)}>
-                <X size={18} />
-              </button>
-            </div>
-            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {formError && (
-                <div className="alert alert-danger" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '8px 12px' }}>
-                  <AlertCircle size={16} />
-                  <span>{formError}</span>
-                </div>
-              )}
 
-              <div className="form-group">
-                <label className="form-label">Material Name <span className="required">*</span></label>
-                <input
-                  className="form-control"
-                  value={modalForm.name}
-                  onChange={e => setModalForm(f => ({ ...f, name: e.target.value }))}
-                  placeholder="e.g. Cotton Blue Fabric"
-                />
-              </div>
-
-              <div className="form-grid form-grid-2" style={{ gap: 14 }}>
-                <div className="form-group">
-                  <label className="form-label">Category</label>
-                  <select
-                    className="form-control"
-                    value={modalForm.category}
-                    onChange={e => {
-                      const cat = e.target.value;
-                      setModalForm(f => ({ ...f, category: cat, subCategory: SUB_CATS[cat]?.[0] || '' }));
-                    }}
-                  >
-                    {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Sub Category</label>
-                  <select
-                    className="form-control"
-                    value={modalForm.subCategory}
-                    onChange={e => setModalForm(f => ({ ...f, subCategory: e.target.value }))}
-                  >
-                    {(SUB_CATS[modalForm.category] || []).map(sc => <option key={sc}>{sc}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div className="form-grid form-grid-2" style={{ gap: 14 }}>
-                <div className="form-group">
-                  <label className="form-label">Color / Shade</label>
-                  <input
-                    className="form-control"
-                    value={modalForm.color}
-                    onChange={e => setModalForm(f => ({ ...f, color: e.target.value }))}
-                    placeholder="e.g. Navy Blue"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Supplier <span className="required">*</span></label>
-                  <select
-                    className="form-control"
-                    value={modalForm.supplier}
-                    onChange={e => setModalForm(f => ({ ...f, supplier: parseInt(e.target.value) }))}
-                  >
-                    <option value="">Select Supplier</option>
-                    {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div className="form-grid form-grid-2" style={{ gap: 14 }}>
-                <div className="form-group">
-                  <label className="form-label">Invoice / Bill No</label>
-                  <input
-                    className="form-control"
-                    value={modalForm.billNumber}
-                    onChange={e => setModalForm(f => ({ ...f, billNumber: e.target.value }))}
-                    placeholder="e.g. INV-2025-001"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Purchase Order (PO) No</label>
-                  <input
-                    className="form-control"
-                    value={modalForm.poNumber}
-                    onChange={e => setModalForm(f => ({ ...f, poNumber: e.target.value }))}
-                    placeholder="e.g. PO-2025-001"
-                  />
-                </div>
-              </div>
-
-              <div className="form-grid form-grid-3" style={{ gap: 14 }}>
-                <div className="form-group">
-                  <label className="form-label">Roll Quantity</label>
-                  <input
-                    className="form-control"
-                    type="number"
-                    value={modalForm.rolls}
-                    onChange={e => setModalForm(f => ({ ...f, rolls: e.target.value }))}
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Weight (Kg)</label>
-                  <input
-                    className="form-control"
-                    type="number"
-                    value={modalForm.weight}
-                    onChange={e => setModalForm(f => ({ ...f, weight: e.target.value }))}
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Unit</label>
-                  <select
-                    className="form-control"
-                    value={modalForm.unit}
-                    onChange={e => setModalForm(f => ({ ...f, unit: e.target.value }))}
-                  >
-                    {UNITS.map(u => <option key={u}>{u}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
-                <button className="btn btn-secondary" onClick={() => setShowPlacementModal(false)}>
-                  Cancel
-                </button>
-                <button className="btn btn-primary" onClick={handleSavePlacement}>
-                  Confirm & Store
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* --- FLOATING AI VOICE ASSISTANT PANEL WITH USER ROBOT IMAGE --- */}
       {agentOpen && (

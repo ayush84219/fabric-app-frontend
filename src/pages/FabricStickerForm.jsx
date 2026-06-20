@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { store } from '../store.js';
 import {
   Scale, Printer, Play, Square, RotateCcw,
@@ -13,6 +13,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'htt
 
 const FabricStickerForm = () => {
   const navigate = useNavigate();
+  const locationHook = useLocation();
 
   // Get logged in user data
   const [loggedInUser, setLoggedInUser] = useState(null);
@@ -276,14 +277,16 @@ const FabricStickerForm = () => {
     const reqRolls = parseInt(totalRollsInBatch) || 0;
     const available = shelves.filter(s => (s.capacity - s.used) >= reqRolls);
     if (available.length > 0) {
-      // If current selected location is not valid/available, select the first valid one
-      if (!available.some(s => s.id === formData.location)) {
+      const prefilled = locationHook.state?.prefilledLocation;
+      if (prefilled && available.some(s => s.id === prefilled)) {
+        setFormData(prev => ({ ...prev, location: prefilled }));
+      } else if (!available.some(s => s.id === formData.location)) {
         setFormData(prev => ({ ...prev, location: available[0].id }));
       }
     } else {
       setFormData(prev => ({ ...prev, location: '' }));
     }
-  }, [totalRollsInBatch, shelves]);
+  }, [totalRollsInBatch, shelves, locationHook.state?.prefilledLocation]);
 
   // Centralized cleanup function
   const cleanupAllResources = async () => {
@@ -1551,6 +1554,39 @@ const FabricStickerForm = () => {
     setFormData(prev => ({ ...prev, [key]: val }));
   };
 
+  // derived cascading location selectors
+  const selectedShelf = shelves.find(s => s.id === formData.location);
+  const selectedHall = selectedShelf ? selectedShelf.room : '';
+  const selectedZone = selectedShelf ? selectedShelf.rack : '';
+
+  const reqRolls = parseInt(totalRollsInBatch) || 0;
+  const availableShelves = shelves.filter(s => (s.capacity - s.used) >= reqRolls);
+  const availableHalls = [...new Set(availableShelves.map(s => s.room))].sort();
+  const availableZones = [...new Set(availableShelves.filter(s => s.room === selectedHall).map(s => s.rack))].sort();
+  const availableRacks = availableShelves.filter(s => s.rack === selectedZone);
+
+  const handleHallChange = (newHall) => {
+    const inHall = availableShelves.filter(s => s.room === newHall);
+    if (inHall.length > 0) {
+      setFormData(prev => ({ ...prev, location: inHall[0].id }));
+    } else {
+      setFormData(prev => ({ ...prev, location: '' }));
+    }
+  };
+
+  const handleZoneChange = (newZone) => {
+    const inZone = availableShelves.filter(s => s.rack === newZone);
+    if (inZone.length > 0) {
+      setFormData(prev => ({ ...prev, location: inZone[0].id }));
+    } else {
+      setFormData(prev => ({ ...prev, location: '' }));
+    }
+  };
+
+  const handleRackChange = (newLocationId) => {
+    setFormData(prev => ({ ...prev, location: newLocationId }));
+  };
+
   return (
     <div className="fabric-form-container">
       {/* Floating Batch Progress Card */}
@@ -1872,21 +1908,56 @@ const FabricStickerForm = () => {
 
               <div className="compact-form-row">
                 <div className="form-group">
-                  <label className="form-label">Location (Shelf) <span className="required">*</span></label>
-                  <select className="form-control" value={formData.location} onChange={e => handleInputChange('location', e.target.value)} disabled={batchActive}>
-                    <option value="">Select Shelf</option>
-                    {shelves.filter(s => (s.capacity - s.used) >= (parseInt(totalRollsInBatch) || 0)).length === 0 && (
-                      <option value="" disabled>No space available for {totalRollsInBatch} rolls</option>
-                    )}
-                    {shelves
-                      .filter(s => (s.capacity - s.used) >= (parseInt(totalRollsInBatch) || 0))
-                      .map(s => (
-                        <option key={s.id} value={s.id}>
-                          {s.id} ({s.room} - Rack {s.rack} | Free: {s.capacity - s.used} rolls)
+                  <label className="form-label">Location (Hall / Zone / Rack) <span className="required">*</span></label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select
+                      className="form-control"
+                      value={selectedHall}
+                      onChange={e => handleHallChange(e.target.value)}
+                      disabled={batchActive}
+                      style={{ flex: 1 }}
+                      title="Select Hall"
+                    >
+                      <option value="">Select Hall</option>
+                      {availableHalls.map(h => (
+                        <option key={h} value={h}>
+                          {h === 'A' ? 'Hall 1' : h === 'B' ? 'Hall 2' : h === 'C' ? 'Hall 3' : `Hall ${h}`}
                         </option>
-                      ))
-                    }
-                  </select>
+                      ))}
+                    </select>
+
+                    <select
+                      className="form-control"
+                      value={selectedZone}
+                      onChange={e => handleZoneChange(e.target.value)}
+                      disabled={batchActive || !selectedHall}
+                      style={{ flex: 1 }}
+                      title="Select Zone"
+                    >
+                      <option value="">Select Zone</option>
+                      {availableZones.map(z => (
+                        <option key={z} value={z}>
+                          Zone {z.split('-')[1] || z}
+                        </option>
+                      ))}
+                    </select>
+
+                    <select
+                      className="form-control"
+                      value={formData.location}
+                      onChange={e => handleRackChange(e.target.value)}
+                      disabled={batchActive || !selectedZone}
+                      style={{ flex: 1.5 }}
+                      title="Select Rack"
+                    >
+                      <option value="">Select Rack</option>
+                      {availableRacks.map(r => (
+                        <option key={r.id} value={r.id}>
+                          {r.id.split('-')[2] || r.id} (Free: {r.capacity - r.used})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
                 <div className="form-group">
                   <label className="form-label"> Date <span className="required">*</span></label>

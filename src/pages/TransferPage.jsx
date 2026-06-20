@@ -10,7 +10,7 @@ export default function TransferPage() {
   const [showRecommendations, setShowRecommendations] = useState(false);
   const [form, setForm] = useState({
     materialId: '', fromLocation: '', toLocation: '', rolls: '',
-    reason: '', date: new Date().toISOString().slice(0,10), transferredBy: 'Admin User',
+    reason: '', date: new Date().toISOString().slice(0, 10), transferredBy: 'Admin User',
   });
   const [saved, setSaved] = useState(null);
   const [error, setError] = useState('');
@@ -65,18 +65,18 @@ export default function TransferPage() {
     const rollsVal = parseInt(form.rolls);
     if (isNaN(rollsVal) || rollsVal <= 0) { setError('Rolls must be greater than 0.'); return; }
     if (selectedMat && rollsVal > selectedMat.rolls) { setError(`Insufficient stock. Available: ${selectedMat.rolls} Rolls`); return; }
-    
+
     const dest = shelves.find(s => s.id === form.toLocation);
     if (dest && (dest.capacity - dest.used) < rollsVal) {
       setError(`Destination shelf cannot fit ${rollsVal} rolls. Free capacity: ${dest.capacity - dest.used} rolls.`);
       return;
     }
-    
+
     try {
       const trf = await store.addTransfer({ ...form, materialId: parseInt(form.materialId), rolls: rollsVal });
       setSaved({ ...trf, materialName: selectedMat?.name });
       load();
-      setForm({ materialId: '', fromLocation: '', toLocation: '', rolls: '', reason: '', date: new Date().toISOString().slice(0,10), transferredBy: 'Admin User' });
+      setForm({ materialId: '', fromLocation: '', toLocation: '', rolls: '', reason: '', date: new Date().toISOString().slice(0, 10), transferredBy: 'Admin User' });
     } catch (e) {
       setError(e.message || 'Error processing transfer');
     }
@@ -88,8 +88,8 @@ export default function TransferPage() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div className="page-header">
         <div className="page-title-block" style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <button 
-            onClick={() => window.history.back()} 
+          <button
+            onClick={() => window.history.back()}
             className="btn btn-secondary btn-icon btn-sm"
             style={{ borderRadius: '50%', width: 32, height: 32, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 4 }}
             title="Go Back"
@@ -183,13 +183,13 @@ export default function TransferPage() {
                 </div>
 
                 {showRecommendations && (
-                  <div 
-                    className="recommendations-container" 
-                    style={{ 
-                      marginTop: 10, 
-                      padding: 16, 
-                      background: 'var(--bg)', 
-                      borderRadius: 'var(--radius-md)', 
+                  <div
+                    className="recommendations-container"
+                    style={{
+                      marginTop: 10,
+                      padding: 16,
+                      background: 'var(--bg)',
+                      borderRadius: 'var(--radius-md)',
                       border: '1px solid var(--border)',
                       textAlign: 'left'
                     }}
@@ -304,7 +304,7 @@ export default function TransferPage() {
                   <th>Reason</th>
                   <th>By</th>
                   <th>Status</th>
-                  <th>Date</th>
+                  <th>Date and Time</th>
                 </tr>
               </thead>
               <tbody>

@@ -236,14 +236,14 @@ export default function Layout({ children, darkMode, toggleDark, currentUser, ha
               </button>
 
               {showNotifs && (
-                <div 
-                  className="notifications-dropdown card" 
-                  style={{ 
-                    position: 'absolute', 
-                    top: '44px', 
-                    right: '0px', 
-                    width: '320px', 
-                    zIndex: 1000, 
+                <div
+                  className="notifications-dropdown card"
+                  style={{
+                    position: 'absolute',
+                    top: '44px',
+                    right: '0px',
+                    width: '320px',
+                    zIndex: 1000,
                     boxShadow: 'var(--shadow-lg)',
                     border: '1px solid var(--border)',
                     background: 'var(--surface)'
@@ -277,16 +277,16 @@ export default function Layout({ children, darkMode, toggleDark, currentUser, ha
                           </div>
                           {currentUser?.role === 'Admin' ? (
                             <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                              <button 
-                                className="btn btn-success btn-sm" 
-                                style={{ flex: 1, padding: '4px 8px', fontSize: 11 }} 
+                              <button
+                                className="btn btn-success btn-sm"
+                                style={{ flex: 1, padding: '4px 8px', fontSize: 11 }}
                                 onClick={() => handleApprove(t.id)}
                               >
                                 Yes (Approve)
                               </button>
-                              <button 
-                                className="btn btn-danger btn-sm" 
-                                style={{ flex: 1, padding: '4px 8px', fontSize: 11 }} 
+                              <button
+                                className="btn btn-danger btn-sm"
+                                style={{ flex: 1, padding: '4px 8px', fontSize: 11 }}
                                 onClick={() => handleReject(t.id)}
                               >
                                 No (Reject)
